@@ -67,14 +67,27 @@ def record_prediction(snap: dict) -> dict:
 
 
 def grade_record(rec: dict, ohlc: dict, band: float = None) -> dict | None:
-    band = config.GRADE_BAND_PCT if band is None else band
-    o, c = ohlc.get("open"), ohlc.get("close")
-    if not o:
+    """
+    Grade one call over the window actually traded (open -> GRADE_EXIT_TIME).
+
+    `rule` rides along on every outcome. Without it, changing the exit time or
+    the band later would blend results measured two different ways into a
+    single hit rate — and a hit rate that mixes rules describes nothing.
+    """
+    ticker = rec.get("ticker", "")
+    band = config.grade_band_for(ticker) if band is None else band
+    o = ohlc.get("open")
+    c = ohlc.get("exit", ohlc.get("close"))   # tolerate the old key
+    if not o or c is None:
         return None
     move_pct = 100 * (c - o) / o
     actual = "up" if move_pct > band else "down" if move_pct < -band else "flat"
-    return {"open": round(o, 2), "close": round(c, 2), "move_pct": round(move_pct, 2),
-            "actual_dir": actual, "correct": rec["predicted_dir"] == actual}
+    # The rule string is composed here, where the ticker's band is known.
+    # get_ohlc only reports HOW it got the price; any caveat rides along.
+    note = ohlc.get("note", "")
+    return {"open": round(o, 2), "exit": round(c, 2), "move_pct": round(move_pct, 2),
+            "actual_dir": actual, "correct": rec["predicted_dir"] == actual,
+            "rule": config.grade_rule_for(ticker) + (f" {note}" if note else "")}
 
 
 def grade_pending(get_ohlc) -> dict:
@@ -132,6 +145,12 @@ def compute_stats(recs: dict, ticker: str = None) -> dict:
         # or a SPY panel reports NVDA's ungraded calls as its own
         "pending": sum(1 for r in vals if r.get("outcome") is None),
         "ticker": ticker,
+        # per-ticker, matching how these records were actually graded
+        "rule": config.grade_rule_for(ticker) if ticker else config.GRADE_RULE,
+        # Surfaced so a hit rate built from two different grading rules can't
+        # be read as if it were one measurement.
+        "mixed_rules": sorted({r["outcome"].get("rule", "?") for r in graded}) if len(
+            {r["outcome"].get("rule", "?") for r in graded}) > 1 else None,
     }
 
 
@@ -155,19 +174,24 @@ def ensure_seeded() -> None:
                 pdir = predicted_dir(label)
                 o = base + random.uniform(-6, 6)
                 agree = random.random() < 0.58   # ~58% realistic-ish edge
+                # Move sizes match the open->12:00 window, not open->close:
+                # measured median |move| over 60 SPY sessions is ~0.28% with a
+                # p90 near 0.62%. Seeding full-day magnitudes here would make
+                # the demo panel look nothing like what live grading produces.
                 if pdir == "flat":
-                    mv = random.uniform(-0.12, 0.12) if agree else random.choice([-1, 1]) * random.uniform(0.3, 1.2)
+                    mv = random.uniform(-0.14, 0.14) if agree else random.choice([-1, 1]) * random.uniform(0.25, 0.9)
                 else:
                     sign = 1 if pdir == "up" else -1
-                    mv = sign * random.uniform(0.2, 1.3) if agree else -sign * random.uniform(0.2, 1.1)
+                    mv = sign * random.uniform(0.2, 0.95) if agree else -sign * random.uniform(0.2, 0.8)
                 c = o * (1 + mv / 100)
-                band = config.GRADE_BAND_PCT
+                band = config.grade_band_for(ticker)   # per-ticker, as live grading is
                 actual = "up" if mv > band else "down" if mv < -band else "flat"
                 out[key(ticker, d.isoformat())] = {
                     "date": d.isoformat(), "ticker": ticker, "bias": label,
                     "score": round(random.uniform(-4, 4), 1), "predicted_dir": pdir, "spot": round(o, 2),
-                    "outcome": {"open": round(o, 2), "close": round(c, 2), "move_pct": round(mv, 2),
-                                "actual_dir": actual, "correct": pdir == actual},
+                    "outcome": {"open": round(o, 2), "exit": round(c, 2), "move_pct": round(mv, 2),
+                                "actual_dir": actual, "correct": pdir == actual,
+                                "rule": config.grade_rule_for(ticker)},
                 }
                 count += 1
             d -= dt.timedelta(days=1)

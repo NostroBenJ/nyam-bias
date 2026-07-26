@@ -18,17 +18,58 @@ from data.mock_data import mock_market
 
 
 def get_ohlc(ticker: str, date_iso: str) -> dict | None:
-    """Fetch a single past day's OHLC for grading. None in mock mode (the
-    mock store ships pre-graded)."""
+    """
+    Fetch the session's open and the price at GRADE_EXIT_TIME, for grading.
+
+    Returns {"open", "exit", "note"} or None. `note` is empty on a clean read
+    and carries a caveat otherwise, so a record graded by a fallback can never
+    be mistaken for one graded the intended way. The tracker composes the full
+    rule string from it, since only the tracker knows the ticker's band.
+
+    Grading the bias over hours you aren't in the market measures the wrong
+    thing, so the exit is the configured intraday time rather than the close.
+    That needs intraday bars, which Yahoo only serves for the last ~60 days —
+    fine in practice, since grading runs the same afternoon as the call.
+    """
     if config.USE_MOCK_DATA:
         return None
     import yfinance as yf
+
     d = dt.date.fromisoformat(date_iso)
-    h = yf.Ticker(ticker).history(start=d.isoformat(), end=(d + dt.timedelta(days=1)).isoformat())
+    tk = yf.Ticker(ticker)
+    exit_h, exit_m = map(int, config.GRADE_EXIT_TIME.split(":"))
+
+    try:
+        bars = tk.history(start=d.isoformat(),
+                          end=(d + dt.timedelta(days=1)).isoformat(),
+                          interval="30m", prepost=False)
+    except Exception:
+        bars = None
+
+    if bars is not None and len(bars):
+        bars = bars[bars["Volume"] > 0]
+        idx = bars.index
+        rth = bars[(idx.hour > 9) | ((idx.hour == 9) & (idx.minute >= 30))]
+        if len(rth):
+            o = float(rth["Open"].iloc[0])
+            # the bar STARTING 30 minutes before the exit time closes on it
+            at = rth.index
+            hit = rth[(at.hour == exit_h - 1) & (at.minute == 30)] if exit_m == 0 \
+                else rth[(at.hour == exit_h) & (at.minute == exit_m - 30)]
+            if len(hit):
+                return {"open": o, "exit": float(hit["Close"].iloc[0]), "note": ""}
+            # session ended before the exit time (half day) — use its last print
+            return {"open": o, "exit": float(rth["Close"].iloc[-1]),
+                    "note": "[short session]"}
+
+    # Older than Yahoo's intraday window. Grade on the close, but SAY SO —
+    # silently mixing a full-day result into a morning hit rate would corrupt
+    # the one number this whole panel exists to report.
+    h = tk.history(start=d.isoformat(), end=(d + dt.timedelta(days=1)).isoformat())
     if len(h) == 0:
         return None
-    return {"open": float(h["Open"].iloc[0]), "close": float(h["Close"].iloc[0]),
-            "high": float(h["High"].iloc[0]), "low": float(h["Low"].iloc[0])}
+    return {"open": float(h["Open"].iloc[0]), "exit": float(h["Close"].iloc[0]),
+            "note": "[FULL DAY - intraday unavailable]"}
 
 
 def get_market(ticker: str = None) -> dict:

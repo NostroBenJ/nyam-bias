@@ -150,15 +150,37 @@ replacing the other is not.
 
 ## Track record — does the bias actually work?
 
-Every weekday the app saves its call; after the close it grades against that
-session's open->close move and keeps a running hit rate. **Directional accuracy
+Every weekday the app saves its call and grades it over **the window you
+actually trade: open → 12:00 ET** (`GRADE_EXIT_TIME`). **Directional accuracy
 is the number that matters, and the baseline is 50%.**
 
-- Per ticker. Records are keyed `TICKER|date` — pooling a SPY hit rate with an
-  NVDA one describes no instrument you actually trade.
+This used to grade open→close, which scored the call over ~4 hours you aren't
+in the market. It is not a cosmetic difference: over 60 SPY sessions the two
+windows disagree on **45% of days**, including outright sign flips (2026-05-12
+was −0.60% at noon and +0.53% by the close). A lean that was right when you
+closed out was being marked a loss you never took.
+
+- **Per ticker.** Records are keyed `TICKER|date` — pooling a SPY hit rate with
+  an NVDA one describes no instrument you actually trade.
+- **Per-ticker band.** A move smaller than the band counts as flat, which is
+  how NEUTRAL scores. One global band doesn't work: 0.175% leaves ~27% of SPY
+  sessions flat but ~40% of QQQ's, because QQQ simply moves more. Measured
+  values live in `GRADE_BAND_BY_TICKER`.
+- **The band is measured, not guessed** — 0.175% is what leaves the same share
+  of SPY days flat over the morning window as 0.15% did over the full day, so
+  NEUTRAL stays exactly as hard to score. Re-derive it on fresh data:
+
+  ```bash
+  python measure_grade_band.py SPY QQQ
+  ```
+
+  It also reports stability, and currently flags both tickers as **unstable** —
+  the ratio swings 0.65→0.92 across halves of a 60-session sample. Re-run
+  periodically; don't chase small moves in the number.
+- **Every outcome is stamped with the rule that graded it** (`open->12:00@0.175`).
+  Change the window or the band later and the panel will tell you the history
+  is mixed rather than blending two measurements into one meaningless rate.
 - Persisted to `data_store/records.json` (mock mode uses a separate file).
-- Grading band is `GRADE_BAND_PCT` in `config.py`; a move smaller than that
-  counts as a flat day, which is how NEUTRAL gets graded correct.
 - **Small samples are noise.** The panel says so until ~30+ graded days. This
   is the feature that tells you whether any of this has an edge — let it.
 
