@@ -82,15 +82,27 @@ def compute_gex(chain: dict, spot: float, r: float) -> dict:
     profile = [{"strike": k, "gex": by_strike[k]} for k in strikes]
     net_gex = sum(by_strike.values())
 
-    # --- gamma flip: where cumulative GEX (low->high strike) crosses zero ---
-    # NOTE: this is the quick approximation. The "true" zero-gamma level
-    # recomputes gamma at each candidate spot. Good enough for a morning bias;
-    # marked as a future upgrade in the README.
-    flip = _zero_cross(profile)
+    # --- gamma flip: the spot price at which NET dealer gamma is zero -------
+    # Computed by re-pricing the whole chain at candidate spots and bisecting
+    # the sign change (see gamma_flip()). The old cumulative-across-strikes
+    # approximation is gone: it read a float-noise sign flip among worthless
+    # deep-OTM strikes as a regime line hundreds of points below spot.
+    flip = gamma_flip(chain, spot, r)
 
-    # --- walls: biggest positive (call) and most negative (put) gamma -------
-    call_wall = max(profile, key=lambda p: p["gex"]) if profile else None
-    put_wall = min(profile, key=lambda p: p["gex"]) if profile else None
+    # --- walls -------------------------------------------------------------
+    # A call wall is resistance, so it must sit AT or ABOVE spot; a put wall is
+    # support, so it must sit AT or BELOW. Taking the global max/min ignores
+    # that and happily returns a "floor" above the current price.
+    above = [p for p in profile if p["strike"] >= spot]
+    below = [p for p in profile if p["strike"] <= spot]
+    call_wall = max(above, key=lambda p: p["gex"]) if above else None
+    put_wall = min(below, key=lambda p: p["gex"]) if below else None
+    # Only a POSITIVE-gamma strike is a real call wall (and negative for puts).
+    # If the best candidate has the wrong sign there is no wall on that side.
+    if call_wall and call_wall["gex"] <= 0:
+        call_wall = None
+    if put_wall and put_wall["gex"] >= 0:
+        put_wall = None
 
     # --- put/call positioning ----------------------------------------------
     call_oi = sum(o["oi"] for o in chain["calls"])
@@ -107,7 +119,12 @@ def compute_gex(chain: dict, spot: float, r: float) -> dict:
     # --- ATM implied vol (nearest strike to spot) for expected-move math ----
     atm_iv = _atm_iv(chain, spot)
 
-    regime = "positive" if spot >= (flip or spot) else "negative"
+    # --- regime: the SIGN OF NET GAMMA AT SPOT, not a comparison to the flip.
+    # These agree when the flip is computed correctly, but net_gex is the thing
+    # being asked about and it is already exact — deriving the regime from a
+    # derived level was how a -$3.7B (deeply negative) book got labelled
+    # "positive gamma / fade the rips", i.e. exactly backwards.
+    regime = "positive" if net_gex >= 0 else "negative"
 
     return {
         "spot": spot,
@@ -141,19 +158,78 @@ def _atm_iv(chain: dict, spot: float) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
-def _zero_cross(profile: list) -> float | None:
-    """Find the strike level where cumulative GEX flips sign."""
-    if not profile:
+def net_gex_at(chain: dict, spot: float, r: float) -> float:
+    """
+    Net dealer $GEX if the underlying were trading at `spot`.
+
+    Note this is NOT "sum the existing per-strike profile". Gamma depends on
+    spot, so every contract has to be re-priced at the candidate price. That
+    re-pricing is the whole reason this function exists.
+    """
+    total = 0.0
+    for rows, sign in ((chain["calls"], 1.0), (chain["puts"], -1.0)):
+        for o in rows:
+            g = bs_gamma(spot, o["strike"], o["t_years"], o["iv"], r)
+            total += sign * dollar_gamma(g, o["oi"], spot)
+    return total
+
+
+def gamma_flip(chain: dict, spot: float, r: float,
+               span: float = 0.15, steps: int = 60) -> float | None:
+    """
+    The zero-gamma level: the price at which net dealer gamma changes sign.
+    Above it dealers are long gamma (they sell rips / buy dips, price pins);
+    below it they are short gamma (hedging amplifies moves).
+
+    Method: walk candidate spots outward from the current price across
+    +/-`span`, find the first bracketing sign change, then bisect it. Scanning
+    outward from spot matters — it returns the flip that price would actually
+    reach first, rather than some far-out crossing.
+
+    Returns None when net gamma holds one sign across the whole window. That
+    is a real answer ("no flip in range"), not a failure, and it is reported
+    as such instead of being papered over with a fabricated level.
+    """
+    if not (chain["calls"] or chain["puts"]) or spot <= 0:
         return None
-    cum = 0.0
-    prev_strike, prev_cum = None, 0.0
-    for p in profile:
-        cum += p["gex"]
-        if prev_strike is not None and (prev_cum < 0 <= cum or prev_cum > 0 >= cum):
-            # linear interpolation between the two bracketing strikes
-            span = cum - prev_cum
-            if span != 0:
-                frac = -prev_cum / span
-                return round(prev_strike + frac * (p["strike"] - prev_strike), 2)
-        prev_strike, prev_cum = p["strike"], cum
-    return profile[len(profile) // 2]["strike"]  # fallback: middle strike
+
+    f0 = net_gex_at(chain, spot, r)
+    if f0 == 0:
+        return round(spot, 2)
+
+    lo_b, hi_b = spot * (1 - span), spot * (1 + span)
+    step = (hi_b - lo_b) / steps
+
+    # candidate prices ordered by distance from spot, so the nearest flip wins
+    offsets = sorted(
+        [spot + i * step for i in range(1, steps + 1) if spot + i * step <= hi_b]
+        + [spot - i * step for i in range(1, steps + 1) if spot - i * step >= lo_b],
+        key=lambda s: abs(s - spot),
+    )
+
+    prev_s, prev_f = spot, f0
+    for s in offsets:
+        f = net_gex_at(chain, s, r)
+        # only a bracket on the SAME side of spot is a genuine crossing;
+        # candidates alternate sides, so re-anchor when the side changes
+        if (s - spot) * (prev_s - spot) < 0:
+            prev_s, prev_f = spot, f0
+        if (prev_f < 0 <= f) or (prev_f > 0 >= f):
+            return round(_bisect_zero(chain, r, prev_s, s), 2)
+        prev_s, prev_f = s, f
+    return None
+
+
+def _bisect_zero(chain: dict, r: float, a: float, b: float, iters: int = 40) -> float:
+    """Bisect net_gex_at to a zero between prices `a` and `b`."""
+    fa = net_gex_at(chain, a, r)
+    for _ in range(iters):
+        m = 0.5 * (a + b)
+        fm = net_gex_at(chain, m, r)
+        if fm == 0:
+            return m
+        if (fa < 0) != (fm < 0):
+            b = m
+        else:
+            a, fa = m, fm
+    return 0.5 * (a + b)

@@ -54,14 +54,18 @@ def _live_market() -> dict:
 
 def _live_ticker(yf, symbol: str, with_chain: bool) -> dict:
     tk = yf.Ticker(symbol)
-    hist = tk.history(period="5d", interval="1d")
+    hist = tk.history(period="10d", interval="1d")
     spot = float(hist["Close"].iloc[-1])
-    prior = hist.iloc[-2]
-    # Overnight range: use the most recent pre/post extended-hours bars if
-    # available, otherwise fall back to the prior day's range as a placeholder.
-    on = tk.history(period="1d", interval="5m", prepost=True)
-    on_high = float(on["High"].max()) if len(on) else float(prior["High"])
-    on_low = float(on["Low"].min()) if len(on) else float(prior["Low"])
+
+    # "Prior session" must be the last COMPLETED regular session. Whether the
+    # current day already has a daily bar depends on the time of day you run
+    # this, so indexing a fixed iloc[-2] silently shifts the reference day by
+    # one during pre-market -- exactly when this tool is meant to be used.
+    today = dt.date.today()
+    last_idx = hist.index[-1].date()
+    prior = hist.iloc[-2] if last_idx >= today else hist.iloc[-1]
+
+    on_high, on_low, on_is_real = _overnight_range(tk, prior)
 
     out = {
         "ticker": symbol,
@@ -71,6 +75,9 @@ def _live_ticker(yf, symbol: str, with_chain: bool) -> dict:
         "prior_close": round(float(prior["Close"]), 2),
         "on_high": round(on_high, 2),
         "on_low": round(on_low, 2),
+        # False => no overnight session yet; prior-day range is standing in and
+        # SMT should not be read as a real divergence signal.
+        "on_is_real": on_is_real,
     }
     if with_chain:
         out["expiries"] = _live_expiries(tk)
@@ -78,17 +85,66 @@ def _live_ticker(yf, symbol: str, with_chain: bool) -> dict:
     return out
 
 
-def _nq_price(yf, qqq_spot: float) -> float:
-    """Live NQ (E-mini Nasdaq) front-month price for the QQQ->NQ ratio.
-    Futures data on Yahoo can be flaky, so fall back to ~41x if it fails —
-    that keeps the conversion working instead of crashing the app."""
+def _overnight_range(tk, prior) -> tuple:
+    """
+    True overnight (Globex) range: prior session's 16:00 ET close through now.
+
+    Two things this has to get right, both of which were wrong before:
+
+    1. WINDOW. `period="1d"` returns the last trading day 04:00-20:00 — that is
+       a full regular session, not an overnight. Feeding that into SMT compares
+       yesterday's day range against yesterday's day range. The overnight that
+       matters for the next open starts at the PRIOR close.
+    2. BAD TICKS. Yahoo's extended-hours bars include zero-volume prints with
+       nonsense lows (an observed QQQ bar: O 684.85 / C 684.76 / L 649.28, vol
+       0). One of those drags the overnight low 5% below reality and poisons
+       every level and divergence read downstream. Zero-volume bars are dropped.
+
+    Returns (high, low, is_real). `is_real` is False when no overnight session
+    exists yet (weekends, or before the first post-close print), in which case
+    the prior session's range stands in. Never widen the fallback beyond that:
+    reporting a multi-day range as "overnight" invents a breakout that never
+    happened and hands SMT a fake divergence.
+    """
+    fallback = (float(prior["High"]), float(prior["Low"]), False)
     try:
-        h = yf.Ticker("NQ=F").history(period="1d")
+        bars = tk.history(period="5d", interval="5m", prepost=True)
+    except Exception:
+        return fallback
+    if bars is None or len(bars) == 0:
+        return fallback
+
+    bars = bars[bars["Volume"] > 0]           # drop phantom prints
+    if len(bars) == 0:
+        return fallback
+
+    # anchor at the close of the last completed regular session
+    idx = bars.index
+    rth_close = idx[(idx.hour == 15) & (idx.minute >= 55)]
+    if not len(rth_close):
+        return fallback
+    on = bars[idx > rth_close[-1]]
+    if not len(on):
+        return fallback
+    return float(on["High"].max()), float(on["Low"].min()), True
+
+
+def _nq_price(yf, qqq_spot: float) -> float | None:
+    """
+    Live NQ (E-mini Nasdaq) front-month price for the QQQ->NQ ratio.
+
+    Returns None when the quote is unavailable. It previously fabricated
+    `spot * 41.0` — a hardcoded guess rendered in the UI indistinguishably
+    from a real quote, so every NQ level shown was invented. A blank is the
+    honest output; the UI renders it as a dash.
+    """
+    try:
+        h = yf.Ticker("NQ=F").history(period="5d")
         if len(h):
-            return float(h["Close"].iloc[-1])
+            return round(float(h["Close"].iloc[-1]), 2)
     except Exception:
         pass
-    return round(qqq_spot * 41.0, 2)
+    return None
 
 
 def _live_expiries(tk) -> list:

@@ -47,13 +47,13 @@ def mock_market():
             "nq_price": round(qqq_spot * 40.96, 2),   # NQ (MNQ) ~= QQQ x ~41
             "expiries": expiries,
             "prior_high": 708.20, "prior_low": 702.50, "prior_close": 706.10,
-            "on_high": 709.10, "on_low": 704.00,
+            "on_high": 709.10, "on_low": 704.00, "on_is_real": True,
         },
         "secondary": {
             "ticker": "SPY",
             "spot": spy_spot,
             "prior_high": 746.50, "prior_low": 742.00, "prior_close": 745.10,
-            "on_high": 745.90, "on_low": 743.00,
+            "on_high": 745.90, "on_low": 743.00, "on_is_real": True,
         },
         "news": {
             "high_impact": True,

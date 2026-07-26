@@ -52,9 +52,11 @@ def build_snapshot() -> dict:
     confluences = levels_mod.find_confluences(levels, gex)
     smt = smt_mod.smt_divergence(
         {"name": p["ticker"], "on_high": p["on_high"], "on_low": p["on_low"],
-         "prior_high": p["prior_high"], "prior_low": p["prior_low"], "spot": p["spot"]},
+         "prior_high": p["prior_high"], "prior_low": p["prior_low"], "spot": p["spot"],
+         "on_is_real": p.get("on_is_real", True)},
         {"name": s["ticker"], "on_high": s["on_high"], "on_low": s["on_low"],
-         "prior_high": s["prior_high"], "prior_low": s["prior_low"], "spot": s["spot"]},
+         "prior_high": s["prior_high"], "prior_low": s["prior_low"], "spot": s["spot"],
+         "on_is_real": s.get("on_is_real", True)},
     )
 
     bias = bias_engine.build_bias(gex, levels, smt, market["news"], em=em, neg_zone=neg_zone)
