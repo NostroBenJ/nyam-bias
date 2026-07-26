@@ -27,10 +27,26 @@ CLAUDE_MODEL = os.getenv("NYAM_CLAUDE_MODEL", "claude-sonnet-4-6")
 # ----------------------------------------------------------------------------
 # MARKET / TICKERS
 # ----------------------------------------------------------------------------
-# You trade MNQ (Nasdaq) and watch ES (S&P) for SMT divergence.
-# QQQ is the liquid options proxy for NQ; SPY is the proxy for ES.
-PRIMARY_TICKER = "QQQ"     # drives your NQ bias
-SMT_PAIR = ("QQQ", "SPY")  # cross-market divergence check (NQ vs ES proxy)
+# The default underlying the dashboard opens on. Changed at runtime from the
+# ticker selector in the top-left; this is only the starting value.
+PRIMARY_TICKER = os.getenv("NYAM_TICKER", "SPY")
+
+# What the selector offers. Add anything with a liquid option chain.
+TICKERS = ["SPY", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "AMZN", "META", "MSFT", "GOOGL"]
+
+# SMT divergence needs a CONFIRMER: a correlated instrument that should be
+# making the same highs/lows. When one index makes a new overnight extreme and
+# the other doesn't, that non-confirmation often front-runs a reversal.
+# SPY<->QQQ is the ES/NQ proxy pair. Single names confirm against their index.
+SMT_CONFIRMER = {"SPY": "QQQ", "QQQ": "SPY", "IWM": "SPY"}
+SMT_DEFAULT_CONFIRMER = "SPY"   # single names (NVDA, TSLA, ...) confirm vs SPY
+
+
+def confirmer_for(ticker: str) -> str:
+    """The SMT partner for `ticker`. Never returns the ticker itself."""
+    c = SMT_CONFIRMER.get(ticker.upper(), SMT_DEFAULT_CONFIRMER)
+    return "QQQ" if c == ticker.upper() else c
+
 
 # How many expirations to roll into the GEX aggregation.
 # 0DTE + near-dated dominate dealer hedging into the open, so keep this tight.

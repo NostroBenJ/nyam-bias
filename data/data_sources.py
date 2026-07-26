@@ -31,24 +31,26 @@ def get_ohlc(ticker: str, date_iso: str) -> dict | None:
             "high": float(h["High"].iloc[0]), "low": float(h["Low"].iloc[0])}
 
 
-def get_market() -> dict:
+def get_market(ticker: str = None) -> dict:
+    ticker = (ticker or config.PRIMARY_TICKER).upper()
     if config.USE_MOCK_DATA:
-        return mock_market()
-    return _live_market()
+        return mock_market(ticker)
+    return _live_market(ticker)
 
 
 # ----------------------------------------------------------------------------
 # LIVE  (free, ~15-min delayed — fine for a pre-market bias)
 # ----------------------------------------------------------------------------
-def _live_market() -> dict:
+def _live_market(ticker: str) -> dict:
     import yfinance as yf
 
-    primary = _live_ticker(yf, config.SMT_PAIR[0], with_chain=True)
-    secondary = _live_ticker(yf, config.SMT_PAIR[1], with_chain=False)
+    confirmer = config.confirmer_for(ticker)
+    primary = _live_ticker(yf, ticker, with_chain=True)
+    secondary = _live_ticker(yf, confirmer, with_chain=False)
     return {
         "primary": primary,
         "secondary": secondary,
-        "news": _live_news(yf, config.SMT_PAIR[0]),
+        "news": _live_news(yf, ticker),
     }
 
 
@@ -81,7 +83,6 @@ def _live_ticker(yf, symbol: str, with_chain: bool) -> dict:
     }
     if with_chain:
         out["expiries"] = _live_expiries(tk)
-        out["nq_price"] = _nq_price(yf, spot)
     return out
 
 
@@ -127,24 +128,6 @@ def _overnight_range(tk, prior) -> tuple:
     if not len(on):
         return fallback
     return float(on["High"].max()), float(on["Low"].min()), True
-
-
-def _nq_price(yf, qqq_spot: float) -> float | None:
-    """
-    Live NQ (E-mini Nasdaq) front-month price for the QQQ->NQ ratio.
-
-    Returns None when the quote is unavailable. It previously fabricated
-    `spot * 41.0` — a hardcoded guess rendered in the UI indistinguishably
-    from a real quote, so every NQ level shown was invented. A blank is the
-    honest output; the UI renders it as a dash.
-    """
-    try:
-        h = yf.Ticker("NQ=F").history(period="5d")
-        if len(h):
-            return round(float(h["Close"].iloc[-1]), 2)
-    except Exception:
-        pass
-    return None
 
 
 def _live_expiries(tk) -> list:

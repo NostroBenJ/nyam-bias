@@ -12,13 +12,14 @@ const money = (n) => {
 };
 const biasClass = (l) => l.includes("LONG") ? "up" : l.includes("SHORT") ? "down" : "flat";
 
+let ACTIVE = null;          // ticker currently displayed
+
 function render(d) {
-  const ratio = d.ratio || 0;
-  const nq = (p) => (ratio && p != null) ? Math.round(p * ratio).toLocaleString() : null;
-  const nqSub = (p) => { const v = nq(p); return v ? `<span class="nq">\u2248 ${v}</span>` : ""; };
+  ACTIVE = d.ticker;
 
   // header
-  $("ticker").textContent = d.ticker;
+  if (document.activeElement !== $("tickerInput")) $("tickerInput").value = d.ticker;
+  $("confirmerBadge").textContent = "vs " + (d.confirmer || "\u2014");
   $("generatedAt").textContent = d.generated_at;
   $("mockBadge").classList.toggle("hidden", !d.mock);
   $("expiriesBadge").textContent = d.expiries_loaded + " EXP";
@@ -33,7 +34,7 @@ function render(d) {
 
   // level action map
   $("levelMap").innerHTML = (d.level_map || []).map(r =>
-    `<li class="${r.cls}"><span class="lm-price">${fmt(r.price)}${nqSub(r.price)}</span>` +
+    `<li class="${r.cls}"><span class="lm-price">${fmt(r.price)}</span>` +
     `<span class="lm-role">${r.role}</span><span class="lm-tag ${r.cls}">${r.tag}</span></li>`).join("");
   const nz = $("negZone");
   if (d.neg_zone) { nz.textContent = "\u26A0 " + d.neg_zone.note; nz.classList.remove("hidden"); }
@@ -43,14 +44,15 @@ function render(d) {
   const g = d.gex, em = d.expected_move;
   $("gexNet").textContent = "$" + money(g.net_gex);
   const reg = $("gexRegime"); reg.textContent = g.regime + " gamma"; reg.className = "tag " + g.regime;
-  $("gexMagnet").innerHTML = fmt(g.control_node) + nqSub(g.control_node);
-  $("gexFlip").innerHTML = fmt(g.gamma_flip) + nqSub(g.gamma_flip);
-  $("gexCallWall").innerHTML = fmt(g.call_wall) + nqSub(g.call_wall);
-  $("gexPutWall").innerHTML = fmt(g.put_wall) + nqSub(g.put_wall);
+  $("gexMagnet").textContent = fmt(g.control_node);
+  // a missing flip/wall is a real answer ("none in range"), not a zero
+  $("gexFlip").textContent = g.gamma_flip == null ? "none in range" : fmt(g.gamma_flip);
+  $("gexCallWall").textContent = g.call_wall == null ? "none" : fmt(g.call_wall);
+  $("gexPutWall").textContent = g.put_wall == null ? "none" : fmt(g.put_wall);
   $("gexPC").textContent = fmt(g.put_call_ratio);
-  $("gexRatio").textContent = ratio ? ratio.toFixed(2) + "\u00D7" : "\u2014";
+  $("gexIV").textContent = g.atm_iv ? (100 * g.atm_iv).toFixed(1) + "%" : "\u2014";
   $("gexEM").textContent = em ? `\u00B1$${em.dollars} (${em.pct}%)` : "\u2014";
-  $("gexRange").innerHTML = em ? `${fmt(em.low)}\u2013${fmt(em.high)}` + (ratio ? `<span class="nq">NQ ${nq(em.low)}\u2013${nq(em.high)}</span>` : "") : "\u2014";
+  $("gexRange").textContent = em ? `${fmt(em.low)}\u2013${fmt(em.high)}` : "\u2014";
   drawGex(g);
 
   // session levels
@@ -91,8 +93,12 @@ function render(d) {
   const t = d.track || {};
   const rate = t.dir_hit_rate;
   const re = $("trackRate");
-  re.querySelector("span").textContent = rate != null ? rate + "%" : "—";
-  re.className = "track-rate " + (rate == null ? "" : rate >= 55 ? "good" : rate <= 45 ? "bad" : "mid");
+  // #trackRate IS the span; the colour class belongs on its .track-rate parent.
+  // This used to do re.querySelector("span") -- looking for a child that does
+  // not exist -- so render() threw here on every single load and the whole
+  // track-record panel silently never rendered.
+  re.textContent = rate != null ? rate + "%" : "—";
+  re.parentElement.className = "track-rate " + (rate == null ? "" : rate >= 55 ? "good" : rate <= 45 ? "bad" : "mid");
   $("trackRecord").textContent = t.n ? `${t.wins}\u2013${t.losses} record` : "no data yet";
   $("trackOverall").textContent = t.n ? `${t.hit_rate}% overall \u00B7 ${t.n} graded${t.pending ? ` \u00B7 ${t.pending} pending` : ""}` : "build history to grade";
   $("trackDots").innerHTML = (t.recent || []).map(r =>
@@ -160,11 +166,70 @@ function drawGex(g) {
   svg.innerHTML = s;
 }
 
+// --- ticker picker ----------------------------------------------------------
+let ALL_TICKERS = [];
+
+async function loadTickers() {
+  try {
+    const r = await (await fetch("/api/tickers")).json();
+    ALL_TICKERS = r.tickers || [];
+    ACTIVE = ACTIVE || r.active;
+    $("tickerInput").value = ACTIVE || "";
+  } catch (e) {}
+}
+
+function renderMenu(filter) {
+  const q = (filter || "").toUpperCase();
+  const hits = ALL_TICKERS.filter(t => t.startsWith(q)).slice(0, 8);
+  const menu = $("tickerMenu");
+  if (!hits.length) { menu.classList.add("hidden"); return; }
+  menu.innerHTML = hits.map(t =>
+    `<div class="ticker-opt${t === ACTIVE ? " on" : ""}" data-t="${t}">${t}</div>`).join("");
+  menu.classList.remove("hidden");
+}
+
+async function switchTicker(t) {
+  t = (t || "").trim().toUpperCase();
+  if (!t || t === ACTIVE) { $("tickerMenu").classList.add("hidden"); return; }
+  $("tickerMenu").classList.add("hidden");
+  $("tickerInput").blur();
+  document.body.classList.add("loading");
+  try {
+    render(await (await fetch("/api/ticker?ticker=" + encodeURIComponent(t), { method: "POST" })).json());
+    if (!ALL_TICKERS.includes(t)) ALL_TICKERS.push(t);
+  } catch (e) {
+    $("tickerInput").value = ACTIVE || "";   // failed switch -> show what's actually displayed
+  }
+  document.body.classList.remove("loading");
+}
+
+$("tickerInput").addEventListener("focus", (e) => { e.target.select(); renderMenu(""); });
+$("tickerInput").addEventListener("input", (e) => renderMenu(e.target.value));
+$("tickerInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") switchTicker(e.target.value);
+  if (e.key === "Escape") { $("tickerMenu").classList.add("hidden"); e.target.value = ACTIVE; e.target.blur(); }
+});
+$("tickerMenu").addEventListener("mousedown", (e) => {
+  const o = e.target.closest(".ticker-opt");
+  if (o) { e.preventDefault(); switchTicker(o.dataset.t); }
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".ticker-picker")) $("tickerMenu").classList.add("hidden");
+});
+
 // --- loaders + live-feed control -------------------------------------------
 let pollTimer = null;
 
+const q = (extra) => ACTIVE ? `?ticker=${encodeURIComponent(ACTIVE)}${extra || ""}` : (extra ? "?" + extra.slice(1) : "");
+
 async function load() {
-  try { render(await (await fetch("/api/bias")).json()); } catch (e) {}
+  // Do NOT swallow this silently. An empty catch here hid a render() crash
+  // that killed the track-record panel on every load for weeks.
+  try {
+    render(await (await fetch("/api/bias" + q())).json());
+  } catch (e) {
+    console.error("dashboard update failed:", e);
+  }
 }
 
 function setFeed(on) {
@@ -187,10 +252,10 @@ function stopPolling() {
   setFeed(false);
 }
 
-startPolling();   // live on page load
+loadTickers().then(startPolling);   // live on page load
 
 $("startBtn").addEventListener("click", async () => {
-  try { render(await (await fetch("/api/start", { method: "POST" })).json()); } catch (e) {}
+  try { render(await (await fetch("/api/start" + q(), { method: "POST" })).json()); } catch (e) {}
   startPolling();
 });
 
@@ -202,7 +267,7 @@ $("stopBtn").addEventListener("click", async () => {
 $("refreshBtn").addEventListener("click", async () => {
   const btn = $("refreshBtn");
   btn.classList.add("spin"); btn.textContent = "\u21BB Refreshing\u2026";
-  try { render(await (await fetch("/api/refresh", { method: "POST" })).json()); }
+  try { render(await (await fetch("/api/refresh" + q(), { method: "POST" })).json()); }
   catch (e) {}
   btn.classList.remove("spin"); btn.textContent = "\u21BB Refresh";
 });

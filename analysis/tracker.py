@@ -30,13 +30,30 @@ def predicted_dir(label: str) -> str:
     return "flat"
 
 
+def key(ticker: str, date: str) -> str:
+    """Record key. MUST include the ticker: keying on date alone meant flipping
+    the selector from SPY to NVDA overwrote the morning's SPY call, silently
+    corrupting the hit rate that the whole track-record panel exists to report."""
+    return f"{ticker.upper()}|{date}"
+
+
 def record_prediction(snap: dict) -> dict:
-    """Save today's prediction once. Never overwrites (keeps the morning call)."""
+    """
+    Save today's prediction once. Never overwrites (keeps the morning call).
+
+    Skips non-trading days. Any refresh used to write a record, so opening the
+    dashboard on a Saturday filed a prediction for a session that never
+    happens: it can never be graded, so it sits 'pending' forever and pads the
+    count. Only weekdays get recorded.
+    """
     recs = store.load()
     date = snap["generated_at"][:10]
-    if date in recs:
+    if dt.date.fromisoformat(date).weekday() >= 5:
         return recs
-    recs[date] = {
+    k = key(snap["ticker"], date)
+    if k in recs:
+        return recs
+    recs[k] = {
         "date": date,
         "ticker": snap["ticker"],
         "bias": snap["bias"]["label"],
@@ -65,7 +82,8 @@ def grade_pending(get_ohlc) -> dict:
     recs = store.load()
     today = dt.date.today().isoformat()
     changed = False
-    for date, rec in recs.items():
+    for rec in recs.values():
+        date = rec["date"]
         if rec.get("outcome") is None and date < today:
             ohlc = get_ohlc(rec["ticker"], date)
             if ohlc:
@@ -78,8 +96,13 @@ def grade_pending(get_ohlc) -> dict:
     return recs
 
 
-def compute_stats(recs: dict) -> dict:
-    graded = [r for r in recs.values() if r.get("outcome")]
+def compute_stats(recs: dict, ticker: str = None) -> dict:
+    """Stats for one ticker (or all, if `ticker` is None). Pooling tickers
+    would report a blended hit rate that describes no instrument you trade."""
+    vals = list(recs.values())
+    if ticker:
+        vals = [r for r in vals if r.get("ticker", "").upper() == ticker.upper()]
+    graded = [r for r in vals if r.get("outcome")]
     n = len(graded)
     wins = sum(1 for r in graded if r["outcome"]["correct"])
 
@@ -105,7 +128,10 @@ def compute_stats(recs: dict) -> dict:
         "recent": [{"date": r["date"], "bias": r["bias"], "predicted": r["predicted_dir"],
                     "actual": r["outcome"]["actual_dir"], "correct": r["outcome"]["correct"],
                     "move_pct": r["outcome"]["move_pct"]} for r in recent],
-        "pending": sum(1 for r in recs.values() if r.get("outcome") is None),
+        # pending must respect the same ticker filter as everything else above,
+        # or a SPY panel reports NVDA's ungraded calls as its own
+        "pending": sum(1 for r in vals if r.get("outcome") is None),
+        "ticker": ticker,
     }
 
 
@@ -117,29 +143,32 @@ def ensure_seeded() -> None:
         return
     if store.load():
         return
-    random.seed(11)
     biases = ["LONG LEAN", "SHORT LEAN", "NEUTRAL / RANGE"]
-    out, count, d = {}, 0, dt.date.today() - dt.timedelta(days=1)
-    while count < 22:
-        if d.weekday() < 5:
-            label = random.choices(biases, weights=[4, 4, 2])[0]
-            pdir = predicted_dir(label)
-            o = 470 + random.uniform(-6, 6)
-            agree = random.random() < 0.58   # ~58% realistic-ish edge
-            if pdir == "flat":
-                mv = random.uniform(-0.12, 0.12) if agree else random.choice([-1, 1]) * random.uniform(0.3, 1.2)
-            else:
-                sign = 1 if pdir == "up" else -1
-                mv = sign * random.uniform(0.2, 1.3) if agree else -sign * random.uniform(0.2, 1.1)
-            c = o * (1 + mv / 100)
-            band = config.GRADE_BAND_PCT
-            actual = "up" if mv > band else "down" if mv < -band else "flat"
-            out[d.isoformat()] = {
-                "date": d.isoformat(), "ticker": "QQQ", "bias": label,
-                "score": round(random.uniform(-4, 4), 1), "predicted_dir": pdir, "spot": round(o, 2),
-                "outcome": {"open": round(o, 2), "close": round(c, 2), "move_pct": round(mv, 2),
-                            "actual_dir": actual, "correct": pdir == actual},
-            }
-            count += 1
-        d -= dt.timedelta(days=1)
+    out = {}
+    for ticker in config.TICKERS:
+        random.seed(hash(ticker) % 10_000)   # per-ticker but reproducible
+        count, d = 0, dt.date.today() - dt.timedelta(days=1)
+        base = 100 + (hash(ticker) % 600)
+        while count < 22:
+            if d.weekday() < 5:
+                label = random.choices(biases, weights=[4, 4, 2])[0]
+                pdir = predicted_dir(label)
+                o = base + random.uniform(-6, 6)
+                agree = random.random() < 0.58   # ~58% realistic-ish edge
+                if pdir == "flat":
+                    mv = random.uniform(-0.12, 0.12) if agree else random.choice([-1, 1]) * random.uniform(0.3, 1.2)
+                else:
+                    sign = 1 if pdir == "up" else -1
+                    mv = sign * random.uniform(0.2, 1.3) if agree else -sign * random.uniform(0.2, 1.1)
+                c = o * (1 + mv / 100)
+                band = config.GRADE_BAND_PCT
+                actual = "up" if mv > band else "down" if mv < -band else "flat"
+                out[key(ticker, d.isoformat())] = {
+                    "date": d.isoformat(), "ticker": ticker, "bias": label,
+                    "score": round(random.uniform(-4, 4), 1), "predicted_dir": pdir, "spot": round(o, 2),
+                    "outcome": {"open": round(o, 2), "close": round(c, 2), "move_pct": round(mv, 2),
+                                "actual_dir": actual, "correct": pdir == actual},
+                }
+                count += 1
+            d -= dt.timedelta(days=1)
     store.save(out)

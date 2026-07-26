@@ -13,7 +13,12 @@
   <div class="brand">
     <span class="brand-mark">&#9672;</span>
     <span class="brand-name">NYAM<span class="dim">//</span>BIAS</span>
-    <span id="ticker" class="badge badge-ticker">&mdash;</span>
+    <div class="ticker-picker">
+      <input id="tickerInput" class="ticker-input" type="text" spellcheck="false"
+             autocomplete="off" maxlength="6" aria-label="Ticker">
+      <div id="tickerMenu" class="ticker-menu hidden"></div>
+    </div>
+    <span id="confirmerBadge" class="badge badge-conf" title="SMT confirmer">&mdash;</span>
     <span id="mockBadge" class="badge badge-mock hidden">MOCK</span>
     <span id="expiriesBadge" class="badge badge-exp">&mdash; EXP</span>
   </div>
@@ -78,7 +83,7 @@
         <div class="chip"><label>Call wall</label><span id="gexCallWall" class="lvl up">&mdash;</span></div>
         <div class="chip"><label>Put wall</label><span id="gexPutWall" class="lvl down">&mdash;</span></div>
         <div class="chip"><label>P/C</label><span id="gexPC">&mdash;</span></div>
-        <div class="chip"><label>NQ ratio</label><span id="gexRatio">&mdash;</span></div>
+        <div class="chip"><label>ATM IV</label><span id="gexIV">&mdash;</span></div>
         <div class="chip"><label>Exp move</label><span id="gexEM">&mdash;</span></div>
         <div class="chip"><label>Range</label><span id="gexRange">&mdash;</span></div>
       </div>

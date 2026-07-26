@@ -17,8 +17,8 @@ from data.data_sources import get_market
 from claude_brief import generate_brief
 
 
-def build_snapshot() -> dict:
-    market = get_market()
+def build_snapshot(ticker: str = None) -> dict:
+    market = get_market(ticker)
     p, s = market["primary"], market["secondary"]
     r = config.RISK_FREE_RATE
     expiries = p["expiries"]
@@ -63,17 +63,15 @@ def build_snapshot() -> dict:
     brief = generate_brief(bias, gex, levels, smt, market["news"])
 
     tracker.ensure_seeded()                       # mock-only demo history
-    track = tracker.compute_stats(store.load())   # read-only; recording happens in app.refresh()
-
-    nq_price = p.get("nq_price")
-    ratio = round(nq_price / p["spot"], 4) if nq_price and p["spot"] else None
+    # stats are per-ticker: a SPY hit rate says nothing about NVDA
+    track = tracker.compute_stats(store.load(), ticker=p["ticker"])
 
     return {
         "generated_at": dt.datetime.now(config.TZ).strftime("%Y-%m-%d %H:%M:%S %Z"),
         "ticker": p["ticker"],
+        "confirmer": s["ticker"],
+        "tickers": config.TICKERS,
         "mock": config.USE_MOCK_DATA,
-        "nq_price": nq_price,
-        "ratio": ratio,
         "expiries_loaded": len(expiries),
         "gex": gex,
         "expected_move": em,

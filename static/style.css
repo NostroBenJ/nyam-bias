@@ -25,9 +25,35 @@ body{
 .topbar-right{display:flex;align-items:center;gap:12px}
 .meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .badge{font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 7px;border-radius:3px;letter-spacing:.06em}
-.badge-ticker{background:var(--neutral);color:#04122e}
 .badge-mock{background:var(--accent);color:#1a1300}
 .badge-exp{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+.badge-conf{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:400}
+
+/* ticker picker (top-left) — type a symbol or pick from the list */
+.ticker-picker{position:relative}
+.ticker-input{
+  width:74px;padding:4px 8px;border-radius:3px;
+  background:var(--neutral);color:#04122e;border:1px solid transparent;
+  font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;cursor:pointer;transition:background .12s,color .12s;
+}
+.ticker-input:focus{
+  outline:none;background:var(--panel-2);color:var(--text);
+  border-color:var(--neutral);cursor:text;
+}
+.ticker-menu{
+  position:absolute;top:calc(100% + 5px);left:0;z-index:40;min-width:100%;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:4px;
+  box-shadow:0 8px 24px rgba(0,0,0,.55);overflow:hidden;
+}
+.ticker-opt{
+  padding:6px 12px;font-family:var(--mono);font-size:12px;font-weight:600;
+  color:var(--text);cursor:pointer;letter-spacing:.05em;
+}
+.ticker-opt:hover{background:var(--neutral);color:#04122e}
+.ticker-opt.on{color:var(--accent)}
+.ticker-opt.on:hover{color:#1a1300}
+body.loading .board{opacity:.45;transition:opacity .1s}
 .pulse{width:8px;height:8px;border-radius:50%;background:var(--up);animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(38,166,154,.5)}70%{box-shadow:0 0 0 6px rgba(38,166,154,0)}100%{box-shadow:0 0 0 0 rgba(38,166,154,0)}}
 .btn{font-family:var(--mono);font-size:11px;background:var(--panel-2);color:var(--text);

@@ -24,9 +24,25 @@ def _build_chain(spot: float, dte: int, wall_bias: float = 0.0):
     return {"calls": calls, "puts": puts}
 
 
-def mock_market():
+# Rough reference prices so mock mode looks plausible per ticker. Only used
+# offline for layout/demo work — never treat these as quotes.
+_MOCK_SPOT = {
+    "SPY": 745.00, "QQQ": 707.00, "IWM": 248.00, "NVDA": 182.00, "TSLA": 425.00,
+    "AAPL": 268.00, "AMZN": 238.00, "META": 735.00, "MSFT": 512.00, "GOOGL": 205.00,
+}
+
+
+def _mock_spot(ticker: str) -> float:
+    return _MOCK_SPOT.get(ticker.upper(), 250.00)
+
+
+def mock_market(ticker: str = None):
+    import config
     random.seed(7)
-    qqq_spot, spy_spot = 707.00, 745.00
+    ticker = (ticker or config.PRIMARY_TICKER).upper()
+    confirmer = config.confirmer_for(ticker)
+    spot = _mock_spot(ticker)
+    conf_spot = _mock_spot(confirmer)
     # 5 expirations; walls mostly agree (high confluence) with slight variation
     expiry_specs = [
         ("Fri Jun 5", 0, 0.0),
@@ -37,23 +53,26 @@ def mock_market():
     ]
     expiries = []
     for label, dte, bias in expiry_specs:
-        ch = _build_chain(qqq_spot, dte, bias)
+        ch = _build_chain(spot, dte, bias)
         expiries.append({"label": label, "dte": dte, "calls": ch["calls"], "puts": ch["puts"]})
+
+    def _session(px, hi_mult, lo_mult, close_mult, onhi_mult, onlo_mult):
+        return {"prior_high": round(px * hi_mult, 2), "prior_low": round(px * lo_mult, 2),
+                "prior_close": round(px * close_mult, 2), "on_high": round(px * onhi_mult, 2),
+                "on_low": round(px * onlo_mult, 2), "on_is_real": True}
 
     return {
         "primary": {
-            "ticker": "QQQ",
-            "spot": qqq_spot,
-            "nq_price": round(qqq_spot * 40.96, 2),   # NQ (MNQ) ~= QQQ x ~41
+            "ticker": ticker,
+            "spot": spot,
             "expiries": expiries,
-            "prior_high": 708.20, "prior_low": 702.50, "prior_close": 706.10,
-            "on_high": 709.10, "on_low": 704.00, "on_is_real": True,
+            **_session(spot, 1.0017, 0.9936, 0.9987, 1.0030, 0.9958),
         },
         "secondary": {
-            "ticker": "SPY",
-            "spot": spy_spot,
-            "prior_high": 746.50, "prior_low": 742.00, "prior_close": 745.10,
-            "on_high": 745.90, "on_low": 743.00, "on_is_real": True,
+            "ticker": confirmer,
+            "spot": conf_spot,
+            # deliberately does NOT make a new overnight high -> demo SMT signal
+            **_session(conf_spot, 1.0020, 0.9960, 1.0001, 1.0012, 0.9973),
         },
         "news": {
             "high_impact": True,
