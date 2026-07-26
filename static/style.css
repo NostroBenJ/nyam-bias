@@ -12,13 +12,16 @@ html,body{height:100%}
 body{
   background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.45;
   overflow:hidden;
+  /* Flex column, not calc(): the stat bar's height depends on whether it wraps,
+     so any hardcoded reservation is wrong at some viewport width. */
+  display:flex;flex-direction:column;height:100vh;
   background-image:radial-gradient(circle at 18% -10%,rgba(90,141,238,.06),transparent 40%),
                    radial-gradient(circle at 92% 0%,rgba(230,180,80,.05),transparent 35%);
 }
 .hidden{display:none!important}.dim{color:var(--dim)}.muted{color:var(--muted)}.small{font-size:12px}
 
 /* topbar */
-.topbar{display:flex;justify-content:space-between;align-items:center;height:50px;
+.topbar{display:flex;justify-content:space-between;align-items:center;height:50px;flex:0 0 auto;
   padding:0 18px;border-bottom:1px solid var(--line);background:rgba(10,14,20,.9)}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-weight:700;letter-spacing:.03em}
 .brand-mark{color:var(--accent);font-size:16px}.brand-name{font-size:14px}
@@ -72,7 +75,7 @@ body.loading .board{opacity:.45;transition:opacity .1s}
 .feed-status.paused .pulse{background:var(--muted);animation:none}
 
 /* board: single screen, three full-height columns */
-.board{height:calc(100vh - 50px);display:grid;grid-template-columns:300px minmax(0,1fr) 336px;
+.board{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr) 336px;
   gap:12px;padding:12px}
 /* A column whose fixed cards over-subscribe the height scrolls, rather than
    crushing whichever card is flex:1. Before this, at 1280x720 the "Why /
@@ -278,3 +281,89 @@ body.loading .board{opacity:.45;transition:opacity .1s}
 /* level cross-check */
 .chk-ok{color:var(--up);font-weight:700}
 .chk-bad{color:var(--down);font-weight:700}
+
+/* ---------------------------------------------------------------------------
+   Headline stat bar — the numbers checked first, before reading anything.
+--------------------------------------------------------------------------- */
+.statbar{
+  flex:0 0 auto;
+  display:flex;align-items:center;gap:16px;padding:9px 18px;
+  border-bottom:1px solid var(--line);background:rgba(15,20,28,.75);
+  flex-wrap:wrap;
+}
+.sb-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}
+.sb-ticker{font-family:var(--mono);font-size:21px;font-weight:700;letter-spacing:.02em}
+.sb-regime{
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.07em;
+  padding:3px 8px;border-radius:3px;white-space:nowrap;
+}
+.sb-regime.negative{background:var(--down-soft);color:var(--down);border:1px solid var(--down)}
+.sb-regime.positive{background:var(--up-soft);color:var(--up);border:1px solid var(--up)}
+.sb-planhead{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.sb-stats{display:flex;gap:15px;margin-left:auto}
+.sb-big{display:flex;gap:18px;padding-left:16px;border-left:1px solid var(--line)}
+.sb-stat{display:flex;flex-direction:column;gap:1px;white-space:nowrap}
+.sb-stat label{font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--muted)}
+.sb-stat span{font-family:var(--mono);font-size:13px;font-weight:500}
+.sb-stat.big span{font-size:19px;font-weight:700}
+.sb-stat span.up{color:var(--up)}.sb-stat span.down{color:var(--down)}
+.sb-stat span.flat{color:var(--neutral)}
+.sb-stat span.node{color:var(--neutral)}
+.sb-stat span.price{color:var(--text)}
+
+/* ---------------------------------------------------------------------------
+   Heatseeker — strike x expiry GEX grid.
+--------------------------------------------------------------------------- */
+.mtx-meta{float:right;font-size:9px;font-family:var(--mono);text-transform:none;letter-spacing:0}
+.mtx-wrap{overflow:auto;max-height:270px;min-height:0}
+.mtx{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10.5px}
+.mtx th{
+  position:sticky;top:0;z-index:2;background:var(--panel);
+  padding:5px 6px;text-align:right;font-size:9px;font-weight:600;letter-spacing:.05em;
+  color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap;
+}
+.mtx th:first-child{text-align:left}
+.mtx-dte{display:block;font-size:8px;color:var(--dim);font-weight:400}
+.mtx td{padding:4px 6px;text-align:right;border-bottom:1px solid rgba(30,39,51,.5);white-space:nowrap}
+.mtx-strike{text-align:left!important;font-weight:600;color:var(--text)}
+.mtx-net{font-weight:600;border-left:1px solid var(--line)}
+.mtx-net.up{color:var(--up)}.mtx-net.down{color:var(--down)}
+.mtx tr.at-spot{outline:1px solid var(--neutral);outline-offset:-1px}
+.mtx tr.at-spot .mtx-strike{color:var(--neutral)}
+
+/* ---------------------------------------------------------------------------
+   Trade plan — what to do at each level.
+--------------------------------------------------------------------------- */
+.plan-list{list-style:none;display:flex;flex-direction:column;gap:6px}
+.plan-list li{
+  padding:7px 9px;border-radius:6px;background:var(--panel-2);
+  border-left:3px solid var(--dim);
+}
+.plan-list li.up{border-left-color:var(--up)}
+.plan-list li.down{border-left-color:var(--down)}
+.plan-list li.mag{border-left-color:var(--neutral)}
+.plan-list li.flip{border-left-color:var(--accent)}
+.pl-head{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.pl-lvl{font-family:var(--mono);font-size:13px;font-weight:700}
+.pl-label{font-size:11px;color:var(--muted);flex:1}
+.pl-action{
+  font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.05em;
+  padding:2px 6px;border-radius:3px;border:1px solid var(--line);white-space:nowrap;
+}
+.pl-action.up{color:var(--up);border-color:var(--up)}
+.pl-action.down{color:var(--down);border-color:var(--down)}
+.pl-action.mag{color:var(--neutral);border-color:var(--neutral)}
+.pl-action.flip{color:var(--accent);border-color:var(--accent)}
+.pl-why{font-size:11px;color:var(--muted);line-height:1.4}
+.plan-bias{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--accent)}
+
+/* refresh interval control */
+.ctl{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.06em;color:var(--muted)}
+.ctl-sel{
+  background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+  border-radius:4px;padding:4px 6px;font-family:var(--mono);font-size:10px;cursor:pointer;
+}
+.ctl-sel:focus{outline:none;border-color:var(--neutral)}

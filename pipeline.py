@@ -11,6 +11,8 @@ from analysis import levels as levels_mod
 from analysis import smt as smt_mod
 from analysis import bias_engine
 from analysis import derived
+from analysis import matrix
+from analysis import plan
 from analysis import tracker
 import store
 from data.data_sources import get_market
@@ -60,9 +62,10 @@ def build_snapshot(ticker: str = None) -> dict:
         merged["puts"] += e["puts"]
     gex = gex_mod.compute_gex(merged, p["spot"], r)
 
-    # --- per-expiry GEX (for confluence) -----------------------------------
+    # --- per-expiry GEX (confluence + the strike x expiry grid) -------------
     per_expiry = [
-        {"label": e["label"], "gex": gex_mod.compute_gex({"calls": e["calls"], "puts": e["puts"]}, p["spot"], r)}
+        {"label": e["label"], "dte": e["dte"],
+         "gex": gex_mod.compute_gex({"calls": e["calls"], "puts": e["puts"]}, p["spot"], r)}
         for e in expiries
     ]
     front_dte = min(e["dte"] for e in expiries)
@@ -92,6 +95,11 @@ def build_snapshot(ticker: str = None) -> dict:
     bias = bias_engine.build_bias(gex, levels, smt, market["news"], em=em, neg_zone=neg_zone)
     brief = generate_brief(bias, gex, levels, smt, market["news"])
 
+    # --- the actionable layer ----------------------------------------------
+    grid = matrix.build(per_expiry, p["spot"])
+    trade_plan = plan.build(gex, em=em, neg_zone=neg_zone)
+    trend = plan.trend_read(gex, smt, bias)
+
     tracker.ensure_seeded()                       # mock-only demo history
     # stats are per-ticker: a SPY hit rate says nothing about NVDA
     track = tracker.compute_stats(store.load(), ticker=p["ticker"])
@@ -108,6 +116,10 @@ def build_snapshot(ticker: str = None) -> dict:
         "flow_alerts": market.get("flow_alerts"),
         "darkpool": market.get("darkpool"),
         "level_check": _cross_check(gex, market.get("uw_levels")),
+        "matrix": grid,
+        "plan": trade_plan,
+        "trend": trend,
+        "expiry_labels": [e["label"] for e in per_expiry],
         "expiries_loaded": len(expiries),
         "gex": gex,
         "expected_move": em,

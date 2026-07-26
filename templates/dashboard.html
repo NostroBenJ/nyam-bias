@@ -23,6 +23,14 @@
     <span id="expiriesBadge" class="badge badge-exp">&mdash; EXP</span>
   </div>
   <div class="topbar-right">
+    <label class="ctl"><span>REFRESH</span>
+      <select id="refreshSel" class="ctl-sel">
+        <option value="30">30s</option><option value="60" selected>1 min</option>
+        <option value="300">5 min</option><option value="900">15 min</option>
+        <option value="1800">30 min</option>
+      </select>
+    </label>
+    <span class="meta" id="nextIn">&mdash;</span>
     <span class="meta" id="generatedAt">&mdash;</span>
     <span class="feed-status" id="feedStatus"><span class="pulse" id="pulse"></span><span id="feedLabel">LIVE</span></span>
     <button id="startBtn" class="btn btn-start">&#9654; Start</button>
@@ -31,6 +39,27 @@
     <button id="logBtn" class="btn">&#10515; Obsidian</button>
   </div>
 </header>
+
+<!-- Headline readout: the numbers you check first, before reading anything -->
+<section class="statbar">
+  <div class="sb-left">
+    <span id="sbTicker" class="sb-ticker">&mdash;</span>
+    <span id="sbRegime" class="sb-regime">&mdash;</span>
+    <span id="sbPlanHead" class="sb-planhead">&mdash;</span>
+  </div>
+  <div class="sb-stats">
+    <div class="sb-stat"><label>Trend</label><span id="sbTrend">&mdash;</span></div>
+    <div class="sb-stat"><label>Expected move</label><span id="sbEM">&mdash;</span></div>
+    <div class="sb-stat"><label>Range</label><span id="sbRange">&mdash;</span></div>
+    <div class="sb-stat"><label>Gamma flip</label><span id="sbFlip">&mdash;</span></div>
+    <div class="sb-stat"><label>Clock</label><span id="sbClock">&mdash;</span></div>
+  </div>
+  <div class="sb-big">
+    <div class="sb-stat big"><label>Control node</label><span id="sbNode" class="node">&mdash;</span></div>
+    <div class="sb-stat big"><label>Total net GEX</label><span id="sbNet">&mdash;</span></div>
+    <div class="sb-stat big"><label>Current price</label><span id="sbPrice" class="price">&mdash;</span></div>
+  </div>
+</section>
 
 <main class="board">
   <!-- LEFT COLUMN -->
@@ -92,6 +121,14 @@
       </div>
     </section>
 
+    <!-- Strike x expiry GEX grid. The aggregate number says dealers are short
+         gamma; this says on which expiration and at which strikes. -->
+    <section class="card" id="matrixCard">
+      <h2 class="card-title">Heatseeker <span class="dim">/ GEX by strike &times; expiry</span>
+        <span id="matrixMeta" class="dim mtx-meta"></span></h2>
+      <div class="mtx-wrap"><table id="matrixTable" class="mtx"></table></div>
+    </section>
+
     <div class="row2">
       <section class="card">
         <h2 class="card-title">SMT <span class="dim">/ NQ vs ES</span></h2>
@@ -107,6 +144,13 @@
 
   <!-- RIGHT COLUMN -->
   <div class="col">
+    <!-- What to DO at each level, not just where it is -->
+    <section class="card" id="planCard">
+      <h2 class="card-title">Trade Plan <span class="dim">/ what each level means</span></h2>
+      <ul id="planRows" class="plan-list"></ul>
+      <div id="planBias" class="plan-bias small"></div>
+    </section>
+
     <section class="card">
       <h2 class="card-title">Confluences</h2>
       <div class="conf-sub">Across expirations</div>

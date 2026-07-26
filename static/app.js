@@ -33,6 +33,40 @@ function render(d) {
   $("biasConviction").textContent = b.conviction;
   $("biasSummary").textContent = b.summary;
 
+  // --- headline stat bar ----------------------------------------------------
+  const g0 = d.gex, em0 = d.expected_move, tr = d.trend || {};
+  $("sbTicker").textContent = d.ticker;
+  const sbReg = $("sbRegime");   // NB: `reg` is already taken further down
+  sbReg.textContent = (g0.regime === "negative" ? "–GEX NEGATIVE" : "+GEX POSITIVE");
+  sbReg.className = "sb-regime " + g0.regime;
+  $("sbPlanHead").textContent = (d.plan && d.plan.headline) || "";
+  const tEl = $("sbTrend");
+  tEl.textContent = `${tr.arrow || ""} ${tr.text || "—"}`;
+  tEl.className = tr.cls || "";
+  $("sbEM").textContent = em0 ? `±$${em0.dollars} (${em0.pct}%)` : "—";
+  $("sbRange").textContent = em0 ? `${fmt(em0.low)} – ${fmt(em0.high)}` : "—";
+  $("sbFlip").textContent = g0.gamma_flip == null ? "none in range" : fmt(g0.gamma_flip);
+  $("sbNode").textContent = fmt(g0.control_node);
+  const netEl = $("sbNet");
+  netEl.textContent = (g0.net_gex < 0 ? "-$" : "$") + money(Math.abs(g0.net_gex));
+  netEl.className = g0.net_gex < 0 ? "down" : "up";
+  $("sbPrice").textContent = "$" + fmt(g0.spot);
+
+  // --- trade plan -----------------------------------------------------------
+  const pl = d.plan;
+  $("planCard").classList.toggle("hidden", !pl || !pl.rows.length);
+  if (pl) {
+    $("planRows").innerHTML = pl.rows.map(r =>
+      `<li class="${r.tone}"><div class="pl-head">` +
+      `<span class="pl-lvl">${fmt(r.level)}</span>` +
+      `<span class="pl-label">${r.label}</span>` +
+      `<span class="pl-action ${r.tone}">${r.action}</span></div>` +
+      `<div class="pl-why">${r.why}</div></li>`).join("");
+    $("planBias").textContent = pl.bias_note || "";
+  }
+
+  drawMatrix(d.matrix);
+
   // level action map
   $("levelMap").innerHTML = (d.level_map || []).map(r =>
     `<li class="${r.cls}"><span class="lm-price">${fmt(r.price)}</span>` +
@@ -152,6 +186,45 @@ function mdLite(s) {
   }
   if (inList) html += "</ul>";
   return html;
+}
+
+// --- heatseeker: strike x expiry GEX grid -----------------------------------
+// One shared colour scale across the whole grid. Scaling per column would make
+// a quiet expiry look as loaded as a heavy one — the entire point of the grid
+// is comparing expiries against each other.
+function drawMatrix(m) {
+  $("matrixCard").classList.toggle("hidden", !m);
+  if (!m) return;
+  $("matrixMeta").textContent = `${m.loaded} exp · peak ${money(m.max_abs)}`;
+
+  const shade = (v) => {
+    if (v == null) return "";
+    const t = Math.min(1, Math.abs(v) / (m.max_abs || 1));
+    // ease so mid-sized cells stay distinguishable instead of washing out
+    const a = (0.10 + 0.75 * Math.pow(t, 0.6)).toFixed(3);
+    return v >= 0 ? `background:rgba(38,166,154,${a})`
+                  : `background:rgba(239,83,80,${a})`;
+  };
+
+  // Expiry labels arrive in two shapes: ISO dates from the live providers
+  // ("2026-07-27") and free-form strings from mock ("Fri Jun 19"). Blindly
+  // slicing at index 5 turned the latter into "un 19".
+  const expLabel = (s) => {
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
+    return iso ? `${iso[2]}-${iso[3]}` : String(s || "").replace(/^\w{3}\s+/, "");
+  };
+
+  let h = "<thead><tr><th>Strike</th>" +
+    m.expiries.map(e => `<th>${expLabel(e.label)}` +
+      `<span class="mtx-dte">${e.dte == null ? "" : e.dte + "d"}</span></th>`).join("") +
+    "<th>Net</th></tr></thead><tbody>";
+  for (const r of m.rows) {
+    h += `<tr class="${r.at_spot ? "at-spot" : ""}">` +
+      `<td class="mtx-strike">${fmt(r.strike)}</td>` +
+      r.cells.map(c => `<td style="${shade(c)}">${c == null ? "·" : money(c)}</td>`).join("") +
+      `<td class="mtx-net ${r.total < 0 ? "down" : "up"}">${money(r.total)}</td></tr>`;
+  }
+  $("matrixTable").innerHTML = h + "</tbody>";
 }
 
 // --- GEX-by-strike chart (pure SVG) ----------------------------------------
@@ -352,17 +425,46 @@ function setFeed(on) {
   $("stopBtn").disabled = !on;
 }
 
+// Countdown exists so a stale-looking number is explainable — on a 30-minute
+// interval you otherwise can't tell "paused" from "not due yet".
+let nextAt = 0, tickTimer = null;
+
+function refreshSecs() { return parseInt($("refreshSel").value, 10) || 60; }
+
+function paintCountdown() {
+  if (!pollTimer) { $("nextIn").textContent = "paused"; return; }
+  const left = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+  const m = Math.floor(left / 60), s = left % 60;
+  $("nextIn").textContent = `next in ${m}m ${String(s).padStart(2, "0")}s`;
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
+  if (tickTimer) clearInterval(tickTimer);
+  const secs = refreshSecs();
   load();
-  pollTimer = setInterval(load, 60000);
+  nextAt = Date.now() + secs * 1000;
+  pollTimer = setInterval(() => { load(); nextAt = Date.now() + secs * 1000; }, secs * 1000);
+  tickTimer = setInterval(paintCountdown, 1000);
+  paintCountdown();
   setFeed(true);
 }
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  paintCountdown();
   setFeed(false);
 }
+
+$("refreshSel").addEventListener("change", () => { if (pollTimer) startPolling(); });
+
+// Wall clock ticks independently of the data — during a 30-minute refresh the
+// snapshot timestamp is stale by design, and a live clock next to it makes
+// that obvious rather than alarming.
+setInterval(() => {
+  $("sbClock").textContent = new Date().toLocaleTimeString([], {hour12: true});
+}, 1000);
 
 loadTickers().then(startPolling);   // live on page load
 
