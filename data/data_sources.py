@@ -35,7 +35,63 @@ def get_market(ticker: str = None) -> dict:
     ticker = (ticker or config.PRIMARY_TICKER).upper()
     if config.USE_MOCK_DATA:
         return mock_market(ticker)
+    if config.PROVIDER == "uw":
+        return _uw_market(ticker)
     return _live_market(ticker)
+
+
+# ----------------------------------------------------------------------------
+# UNUSUAL WHALES  (paid; real-time chains, day-over-day OI, flow, dark pool)
+# ----------------------------------------------------------------------------
+def _uw_market(ticker: str) -> dict:
+    """
+    UW for the option chain and the extras; Yahoo still supplies session OHLC
+    and the confirmer leg.
+
+    Deliberately PARTIAL rather than all-or-nothing. Endpoint coverage varies
+    by UW tier, and a bias built on three of four signals is more useful than
+    a dashboard that refuses to load because the dark pool endpoint 403s. Every
+    piece that fails degrades to the free path and records why in `sources`,
+    so the UI can show what's actually live rather than implying it all is.
+    """
+    from data import unusual_whales as uw
+
+    market = _live_market(ticker)          # Yahoo baseline: OHLC + confirmer
+    market["sources"] = {"chain": "yahoo", "levels": "yahoo",
+                         "flow": None, "darkpool": None, "uw_levels": None}
+    market["uw_errors"] = {}
+
+    def _try(name, fn):
+        try:
+            return fn()
+        except Exception as e:                       # incl. uw.UWError
+            market["uw_errors"][name] = str(e)
+            return None
+
+    contracts = _try("chain", lambda: uw.option_contracts(
+        ticker, exclude_zero_oi_chains=True))
+    if contracts:
+        expiries = uw.chain_to_expiries(contracts, config.GEX_MAX_DTE)
+        if expiries:
+            market["primary"]["expiries"] = expiries
+            market["sources"]["chain"] = "unusual_whales"
+
+    lv = _try("gex_levels", lambda: uw.gex_levels(ticker))
+    if lv:
+        market["uw_levels"] = uw.levels_to_floats(lv)
+        market["sources"]["uw_levels"] = "unusual_whales"
+
+    fa = _try("flow", lambda: uw.flow_alerts(ticker, limit=15))
+    if fa:
+        market["flow_alerts"] = uw.summarize_flow(fa)
+        market["sources"]["flow"] = "unusual_whales"
+
+    dp = _try("darkpool", lambda: uw.darkpool(ticker, limit=15))
+    if dp:
+        market["darkpool"] = uw.summarize_darkpool(dp)
+        market["sources"]["darkpool"] = "unusual_whales"
+
+    return market
 
 
 # ----------------------------------------------------------------------------

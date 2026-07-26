@@ -17,6 +17,36 @@ from data.data_sources import get_market
 from claude_brief import generate_brief
 
 
+def _cross_check(gex: dict, uw_levels: dict, tol: float = 0.004) -> list | None:
+    """
+    Compare our Black-Scholes levels against Unusual Whales' computed ones.
+
+    Both sides claim to measure the same thing and define it the same way, so
+    a disagreement means one of them is wrong — and you want to know that
+    before you trade off either. This does NOT overwrite our numbers with
+    theirs; two independent computations that agree are evidence, and one that
+    silently replaces the other is not.
+
+    Returns None when UW levels aren't available (free provider, or the
+    endpoint isn't in your tier).
+    """
+    if not uw_levels:
+        return None
+    pairs = [("Call Wall", gex.get("call_wall"), uw_levels.get("call_wall")),
+             ("Put Wall", gex.get("put_wall"), uw_levels.get("put_wall")),
+             ("Gamma Flip", gex.get("gamma_flip"), uw_levels.get("gamma_flip")),
+             ("Magnet", gex.get("control_node"), uw_levels.get("gamma_magnet"))]
+    out = []
+    for name, ours, theirs in pairs:
+        if ours is None or theirs is None:
+            out.append({"level": name, "ours": ours, "uw": theirs, "agree": None})
+            continue
+        drift = abs(ours - theirs) / theirs if theirs else 1.0
+        out.append({"level": name, "ours": ours, "uw": theirs,
+                    "drift_pct": round(100 * drift, 2), "agree": drift <= tol})
+    return out
+
+
 def build_snapshot(ticker: str = None) -> dict:
     market = get_market(ticker)
     p, s = market["primary"], market["secondary"]
@@ -72,6 +102,12 @@ def build_snapshot(ticker: str = None) -> dict:
         "confirmer": s["ticker"],
         "tickers": config.TICKERS,
         "mock": config.USE_MOCK_DATA,
+        "provider": config.PROVIDER,
+        "sources": market.get("sources"),
+        "uw_errors": market.get("uw_errors") or {},
+        "flow_alerts": market.get("flow_alerts"),
+        "darkpool": market.get("darkpool"),
+        "level_check": _cross_check(gex, market.get("uw_levels")),
         "expiries_loaded": len(expiries),
         "gex": gex,
         "expected_move": em,

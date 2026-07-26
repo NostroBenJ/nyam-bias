@@ -249,3 +249,22 @@ body.loading .board{opacity:.45;transition:opacity .1s}
 .chat-foot{
   padding:0 12px 9px;font-size:10.5px;color:var(--dim);font-family:var(--mono);
 }
+
+/* flow alerts + dark pool (Unusual Whales) */
+.flow-list{list-style:none;display:flex;flex-direction:column;gap:3px}
+.flow-list li{
+  display:grid;grid-template-columns:34px 52px 44px 1fr auto;
+  align-items:center;gap:6px;padding:4px 7px;border-radius:4px;
+  background:var(--panel-2);font-family:var(--mono);font-size:11px;
+}
+.fl-side{font-weight:700;font-size:9px;letter-spacing:.04em}
+.fl-side.up{color:var(--up)}.fl-side.down{color:var(--down)}.fl-side.dp{color:var(--neutral)}
+.fl-strike{font-weight:600}
+.fl-exp{color:var(--muted);font-size:10px}
+.fl-prem{text-align:right;color:var(--accent)}
+.fl-tag{font-size:8px;font-weight:700;color:var(--accent);border:1px solid var(--accent);
+  border-radius:3px;padding:1px 3px;letter-spacing:.04em}
+
+/* level cross-check */
+.chk-ok{color:var(--up);font-weight:700}
+.chk-bad{color:var(--down);font-weight:700}

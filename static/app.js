@@ -76,6 +76,35 @@ function render(d) {
     ? d.confluences.map(c => `<li><b>${fmt(c.price)}</b> \u2014 ${c.label}</li>`).join("")
     : `<li class="muted">None right now.</li>`;
 
+  // flow + dark pool (Unusual Whales only — cards stay hidden on free data)
+  const fa = d.flow_alerts || [], dp = d.darkpool || [];
+  $("flowCard").classList.toggle("hidden", !fa.length && !dp.length);
+  $("flowAlerts").innerHTML = fa.map(f => {
+    const cls = f.type === "call" ? "up" : "down";
+    return `<li><span class="fl-side ${cls}">${(f.type || "").toUpperCase()}</span>` +
+      `<span class="fl-strike">${fmt(f.strike)}</span>` +
+      `<span class="fl-exp">${(f.expiry || "").slice(5)}</span>` +
+      `<span class="fl-prem">$${money(f.premium)}</span>` +
+      `${f.has_sweep ? '<span class="fl-tag">SWEEP</span>' : ""}</li>`;
+  }).join("");
+  $("dpSub").classList.toggle("hidden", !dp.length);
+  $("darkpool").innerHTML = dp.map(p =>
+    `<li><span class="fl-side dp">DP</span><span class="fl-strike">${fmt(p.price)}</span>` +
+    `<span class="fl-exp">${(p.size || 0).toLocaleString()}</span>` +
+    `<span class="fl-prem">$${money(p.premium)}</span></li>`).join("");
+
+  // level cross-check: our Black-Scholes numbers vs UW's computed ones
+  const lc = d.level_check;
+  $("checkCard").classList.toggle("hidden", !lc);
+  if (lc) {
+    $("levelCheck").innerHTML = lc.map(r => {
+      if (r.agree === null) return `<li class="muted">${r.level} — not comparable</li>`;
+      const mark = r.agree ? '<span class="chk-ok">✓</span>' : '<span class="chk-bad">⚠</span>';
+      return `<li>${mark} <b>${r.level}</b> ${fmt(r.ours)} vs ${fmt(r.uw)}` +
+        `<span class="muted"> (${r.drift_pct}%)</span></li>`;
+    }).join("");
+  }
+
   // news
   $("news").innerHTML = (d.news.items || []).map(n =>
     `<li><span class="impact-${n.impact}">${n.time ? n.time + " " : ""}${n.event}</span></li>`).join("")

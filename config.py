@@ -14,6 +14,15 @@ from zoneinfo import ZoneInfo
 # Flip to False once you've installed yfinance and want real option chains.
 USE_MOCK_DATA = os.getenv("NYAM_MOCK", "1") == "1"
 
+# Live data provider (ignored in mock mode):
+#   "yahoo"  free, ~15-min delayed chains, no OI change, no flow, no dark pool
+#   "uw"     Unusual Whales — real-time chains, day-over-day OI, flow alerts,
+#            dark pool prints. Needs UW_API_KEY. Falls back to Yahoo per-piece
+#            for anything your tier doesn't cover, rather than failing the load.
+# Verify your key first:  python -m data.unusual_whales probe SPY
+PROVIDER = os.getenv("NYAM_PROVIDER", "yahoo").lower()
+UW_API_KEY = os.getenv("UW_API_KEY", "")
+
 # If you ever want to use Claude for the written brief, set this env var:
 #   export ANTHROPIC_API_KEY=sk-ant-...
 # Without it, the app falls back to a templated brief built from the signals,
