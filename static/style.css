@@ -74,10 +74,20 @@ body.loading .board{opacity:.45;transition:opacity .1s}
 /* board: single screen, three full-height columns */
 .board{height:calc(100vh - 50px);display:grid;grid-template-columns:300px minmax(0,1fr) 336px;
   gap:12px;padding:12px}
-.col{display:flex;flex-direction:column;gap:12px;min-height:0;height:100%}
+/* A column whose fixed cards over-subscribe the height scrolls, rather than
+   crushing whichever card is flex:1. Before this, at 1280x720 the "Why /
+   every signal" card — the reasoning behind the whole bias — was squeezed to
+   29px and effectively invisible. Adding the UW flow and level-check cards
+   makes the right column over-subscribe the same way. */
+.col{display:flex;flex-direction:column;gap:12px;min-height:0;height:100%;
+  overflow-y:auto;scrollbar-width:thin}
+.col::-webkit-scrollbar{width:7px}
+.col::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px;
   flex:0 0 auto;display:flex;flex-direction:column;animation:rise .45s both}
-.card.grow{flex:1 1 auto;min-height:0}
+/* min-height is the floor that stops a grow card collapsing to its title bar
+   when the fixed cards above it have already consumed the column. */
+.card.grow{flex:1 1 auto;min-height:180px}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .card-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.05em;
   text-transform:uppercase;color:var(--muted);margin-bottom:11px;border-bottom:1px solid var(--line);
@@ -128,19 +138,19 @@ body.loading .board{opacity:.45;transition:opacity .1s}
   color:var(--down);font-size:11px;font-family:var(--mono);border:1px solid rgba(239,83,80,.3)}
 
 /* track record */
-.track-top{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.track-top{display:flex;align-items:center;gap:14px;margin-bottom:7px}
 .track-rate{display:flex;flex-direction:column;align-items:flex-start;line-height:1}
-.track-rate span{font-family:var(--mono);font-size:30px;font-weight:700}
+.track-rate span{font-family:var(--mono);font-size:26px;font-weight:700}
 .track-rate.good span{color:var(--up)}.track-rate.bad span{color:var(--down)}.track-rate.mid span{color:var(--accent)}
 .track-rate label{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:3px}
 .track-side{display:flex;flex-direction:column;gap:3px}
 .track-record{font-family:var(--mono);font-size:15px;font-weight:600}
-.track-dots{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:9px}
-.track-dots .dot{width:11px;height:11px;border-radius:3px;background:var(--dim)}
+.track-dots{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px}
+.track-dots .dot{width:9px;height:9px;border-radius:2px;background:var(--dim)}
 .track-dots .dot.win{background:var(--up)}.track-dots .dot.loss{background:var(--down)}
 .track-bytype{font-family:var(--mono);color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
 .track-bytype b{color:var(--text)}
-.track-note{margin-top:8px;color:var(--accent);font-family:var(--mono);font-size:10px}
+.track-note{margin-top:5px;color:var(--accent);font-family:var(--mono);font-size:10px;line-height:1.35}
 
 /* levels table */
 .levels{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
