@@ -127,6 +127,22 @@
   </div>
 </main>
 
+<!-- Ask Claude — sees the live snapshot for the selected ticker -->
+<button id="chatToggle" class="chat-toggle" title="Ask Claude about this setup">&#9673;</button>
+<aside id="chatPanel" class="chat-panel hidden">
+  <header class="chat-head">
+    <span class="chat-title">ASK CLAUDE <span id="chatTicker" class="dim">&mdash;</span></span>
+    <button id="chatClear" class="chat-x" title="Clear conversation">clear</button>
+    <button id="chatClose" class="chat-x" title="Close">&times;</button>
+  </header>
+  <div id="chatLog" class="chat-log scroll"></div>
+  <div class="chat-input-row">
+    <textarea id="chatInput" class="chat-input" rows="2" placeholder="Why is the bias short here?"></textarea>
+    <button id="chatSend" class="chat-send">&#9654;</button>
+  </div>
+  <div class="chat-foot">Sees the live snapshot. Positioning analysis, not advice.</div>
+</aside>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

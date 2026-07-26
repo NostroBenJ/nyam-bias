@@ -20,9 +20,15 @@ USE_MOCK_DATA = os.getenv("NYAM_MOCK", "1") == "1"
 # so it still runs and shows you the layout. (No key = no cost.)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Cheapest-good model for a daily brief. Swap to claude-haiku-4-5-20251001 for
-# even lower cost, or a claude-opus model if you want maximum reasoning quality.
-CLAUDE_MODEL = os.getenv("NYAM_CLAUDE_MODEL", "claude-sonnet-4-6")
+# Model for the morning brief and the in-app chat.
+# claude-opus-5 is the current flagship. claude-sonnet-5 is cheaper and still
+# strong; claude-haiku-4-5 is the cheapest if you only want the templated-brief
+# upgrade. A morning brief is a small prompt and a short output either way.
+CLAUDE_MODEL = os.getenv("NYAM_CLAUDE_MODEL", "claude-opus-5")
+
+# How many turns of chat history to keep. The snapshot is re-injected fresh on
+# every turn, so old turns only carry the conversation, not stale market data.
+CHAT_MAX_TURNS = 20
 
 # ----------------------------------------------------------------------------
 # MARKET / TICKERS

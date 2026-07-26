@@ -16,10 +16,11 @@ import threading
 
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import chat as chat_mod
 import config
 from pipeline import build_snapshot
 from logging_obsidian import log_to_obsidian
@@ -115,6 +116,44 @@ def api_stop():
 @app.get("/api/status")
 def api_status():
     return {"running": _running["on"], "ticker": _active["ticker"]}
+
+
+@app.get("/api/chat/status")
+def api_chat_status():
+    """Lets the UI show why chat is disabled instead of failing on first send."""
+    return {"enabled": bool(config.ANTHROPIC_API_KEY), "model": config.CLAUDE_MODEL}
+
+
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    """
+    Stream a Claude reply grounded in the current snapshot.
+
+    Plain text chunks, not SSE — the frontend just appends them as they land,
+    and there's no event framing to parse. The API key stays on this side.
+    """
+    body = await request.json()
+    ticker = (body.get("ticker") or _active["ticker"]).upper()
+    user_msg = (body.get("message") or "").strip()
+    history = body.get("history") or []
+    if not user_msg:
+        return JSONResponse({"error": "empty message"}, status_code=400)
+
+    with _lock:
+        snap = _latest.get(ticker)
+    if snap is None:
+        snap = refresh(ticker)
+
+    def gen():
+        try:
+            for chunk in chat_mod.stream_reply(history, user_msg, snap):
+                yield chunk
+        except chat_mod.ChatUnavailable as e:
+            yield f"⚠ {e}"
+        except Exception as e:                      # surface, don't swallow
+            yield f"⚠ Chat failed: {type(e).__name__}: {e}"
+
+    return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/log")

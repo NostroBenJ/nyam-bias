@@ -20,6 +20,7 @@ function render(d) {
   // header
   if (document.activeElement !== $("tickerInput")) $("tickerInput").value = d.ticker;
   $("confirmerBadge").textContent = "vs " + (d.confirmer || "\u2014");
+  $("chatTicker").textContent = d.ticker;
   $("generatedAt").textContent = d.generated_at;
   $("mockBadge").classList.toggle("hidden", !d.mock);
   $("expiriesBadge").textContent = d.expiries_loaded + " EXP";
@@ -165,6 +166,88 @@ function drawGex(g) {
   s += `<text x="${midX - 6}" y="${H - 8}" fill="#ef5350" font-size="9" font-family="monospace" text-anchor="end">\u2190 put gamma (support)</text>`;
   svg.innerHTML = s;
 }
+
+// --- Ask Claude -------------------------------------------------------------
+// History lives here and is posted with each turn (the server is stateless).
+// Snapshot context is attached server-side so it's always current.
+let chatHistory = [];
+let chatBusy = false;
+
+function chatAdd(role, text) {
+  const el = document.createElement("div");
+  el.className = "chat-msg " + role;
+  el.innerHTML = role === "assistant" ? mdLite(text) : escapeHtml(text);
+  $("chatLog").appendChild(el);
+  $("chatLog").scrollTop = $("chatLog").scrollHeight;
+  return el;
+}
+
+const escapeHtml = (s) => s.replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function chatSend() {
+  const input = $("chatInput");
+  const msg = input.value.trim();
+  if (!msg || chatBusy) return;
+  chatBusy = true;
+  input.value = "";
+  chatAdd("user", msg);
+
+  const bubble = chatAdd("assistant", "");
+  bubble.classList.add("streaming");
+  let acc = "";
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, history: chatHistory, ticker: ACTIVE }),
+    });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      acc += dec.decode(value, { stream: true });
+      bubble.innerHTML = mdLite(acc);          // re-render so markdown closes as it streams
+      $("chatLog").scrollTop = $("chatLog").scrollHeight;
+    }
+  } catch (e) {
+    acc = acc || "⚠ Request failed: " + e.message;
+    bubble.innerHTML = mdLite(acc);
+  }
+  bubble.classList.remove("streaming");
+  chatHistory.push({ role: "user", content: msg }, { role: "assistant", content: acc });
+  chatBusy = false;
+  input.focus();
+}
+
+function toggleChat(open) {
+  const p = $("chatPanel");
+  const show = open === undefined ? p.classList.contains("hidden") : open;
+  p.classList.toggle("hidden", !show);
+  $("chatTicker").textContent = ACTIVE || "—";
+  if (show) $("chatInput").focus();
+}
+
+$("chatToggle").addEventListener("click", () => toggleChat());
+$("chatClose").addEventListener("click", () => toggleChat(false));
+$("chatClear").addEventListener("click", () => { chatHistory = []; $("chatLog").innerHTML = ""; });
+$("chatSend").addEventListener("click", chatSend);
+$("chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); }
+});
+document.addEventListener("keydown", (e) => {
+  // Ctrl/Cmd+K opens chat from anywhere; Esc closes it
+  if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); toggleChat(true); }
+  if (e.key === "Escape" && !$("chatPanel").classList.contains("hidden")) toggleChat(false);
+});
+
+fetch("/api/chat/status").then(r => r.json()).then(s => {
+  if (!s.enabled) {
+    $("chatToggle").classList.add("off");
+    $("chatToggle").title = "Chat needs ANTHROPIC_API_KEY set";
+  }
+}).catch(() => {});
 
 // --- ticker picker ----------------------------------------------------------
 let ALL_TICKERS = [];
