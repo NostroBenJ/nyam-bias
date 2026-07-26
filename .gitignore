@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+data_store/
+obsidian_out/
+.env
+.venv/

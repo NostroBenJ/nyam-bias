@@ -1,0 +1,145 @@
+"""
+tracker.py  --  The honesty engine. Records each morning's bias, grades it
+against what price actually did, and computes a running hit-rate.
+
+GRADING (the choice that matters, documented so you own it):
+  We grade the lean against the SAME session's open -> close move.
+    - LONG correct  if close > open by more than the band
+    - SHORT correct if close < open by more than the band
+    - NEUTRAL correct if |open->close| stayed inside the band (a range day)
+  open->close is clean, free, and reproducible. If you'd rather grade against
+  the morning only (e.g. open -> 11:30), swap the OHLC source — the logic here
+  doesn't change.
+
+Why this exists: it's the difference between "I think the bias works" and
+"the bias is 57% directional over 40 trades." Small samples are noise — the
+panel shows sample size on purpose. Don't trust a hot streak of 6.
+"""
+import datetime as dt
+import random
+
+import config
+import store
+
+
+def predicted_dir(label: str) -> str:
+    if "LONG" in label:
+        return "up"
+    if "SHORT" in label:
+        return "down"
+    return "flat"
+
+
+def record_prediction(snap: dict) -> dict:
+    """Save today's prediction once. Never overwrites (keeps the morning call)."""
+    recs = store.load()
+    date = snap["generated_at"][:10]
+    if date in recs:
+        return recs
+    recs[date] = {
+        "date": date,
+        "ticker": snap["ticker"],
+        "bias": snap["bias"]["label"],
+        "score": snap["bias"]["score"],
+        "predicted_dir": predicted_dir(snap["bias"]["label"]),
+        "spot": snap["gex"]["spot"],
+        "outcome": None,
+    }
+    store.save(recs)
+    return recs
+
+
+def grade_record(rec: dict, ohlc: dict, band: float = None) -> dict | None:
+    band = config.GRADE_BAND_PCT if band is None else band
+    o, c = ohlc.get("open"), ohlc.get("close")
+    if not o:
+        return None
+    move_pct = 100 * (c - o) / o
+    actual = "up" if move_pct > band else "down" if move_pct < -band else "flat"
+    return {"open": round(o, 2), "close": round(c, 2), "move_pct": round(move_pct, 2),
+            "actual_dir": actual, "correct": rec["predicted_dir"] == actual}
+
+
+def grade_pending(get_ohlc) -> dict:
+    """Grade any past, ungraded predictions. `get_ohlc(ticker, date)` -> ohlc|None."""
+    recs = store.load()
+    today = dt.date.today().isoformat()
+    changed = False
+    for date, rec in recs.items():
+        if rec.get("outcome") is None and date < today:
+            ohlc = get_ohlc(rec["ticker"], date)
+            if ohlc:
+                graded = grade_record(rec, ohlc)
+                if graded:
+                    rec["outcome"] = graded
+                    changed = True
+    if changed:
+        store.save(recs)
+    return recs
+
+
+def compute_stats(recs: dict) -> dict:
+    graded = [r for r in recs.values() if r.get("outcome")]
+    n = len(graded)
+    wins = sum(1 for r in graded if r["outcome"]["correct"])
+
+    by = {}
+    for r in graded:
+        b = "LONG" if "LONG" in r["bias"] else "SHORT" if "SHORT" in r["bias"] else "NEUTRAL"
+        d = by.setdefault(b, {"n": 0, "wins": 0})
+        d["n"] += 1
+        d["wins"] += 1 if r["outcome"]["correct"] else 0
+
+    dir_graded = [r for r in graded if r["predicted_dir"] != "flat"]
+    dir_wins = sum(1 for r in dir_graded if r["outcome"]["correct"])
+    recent = sorted(graded, key=lambda r: r["date"])[-15:]
+
+    return {
+        "n": n, "wins": wins, "losses": n - wins,
+        "hit_rate": round(100 * wins / n, 1) if n else None,
+        "dir_n": len(dir_graded),
+        "dir_hit_rate": round(100 * dir_wins / len(dir_graded), 1) if dir_graded else None,
+        "by_type": {k: {"n": v["n"], "wins": v["wins"],
+                        "rate": round(100 * v["wins"] / v["n"]) if v["n"] else None}
+                    for k, v in by.items()},
+        "recent": [{"date": r["date"], "bias": r["bias"], "predicted": r["predicted_dir"],
+                    "actual": r["outcome"]["actual_dir"], "correct": r["outcome"]["correct"],
+                    "move_pct": r["outcome"]["move_pct"]} for r in recent],
+        "pending": sum(1 for r in recs.values() if r.get("outcome") is None),
+    }
+
+
+def ensure_seeded() -> None:
+    """MOCK ONLY: populate ~22 days of believable history so the panel isn't
+    empty in the demo. Deterministic. Real (live) mode starts empty and builds
+    its own record over time."""
+    if not config.USE_MOCK_DATA:
+        return
+    if store.load():
+        return
+    random.seed(11)
+    biases = ["LONG LEAN", "SHORT LEAN", "NEUTRAL / RANGE"]
+    out, count, d = {}, 0, dt.date.today() - dt.timedelta(days=1)
+    while count < 22:
+        if d.weekday() < 5:
+            label = random.choices(biases, weights=[4, 4, 2])[0]
+            pdir = predicted_dir(label)
+            o = 470 + random.uniform(-6, 6)
+            agree = random.random() < 0.58   # ~58% realistic-ish edge
+            if pdir == "flat":
+                mv = random.uniform(-0.12, 0.12) if agree else random.choice([-1, 1]) * random.uniform(0.3, 1.2)
+            else:
+                sign = 1 if pdir == "up" else -1
+                mv = sign * random.uniform(0.2, 1.3) if agree else -sign * random.uniform(0.2, 1.1)
+            c = o * (1 + mv / 100)
+            band = config.GRADE_BAND_PCT
+            actual = "up" if mv > band else "down" if mv < -band else "flat"
+            out[d.isoformat()] = {
+                "date": d.isoformat(), "ticker": "QQQ", "bias": label,
+                "score": round(random.uniform(-4, 4), 1), "predicted_dir": pdir, "spot": round(o, 2),
+                "outcome": {"open": round(o, 2), "close": round(c, 2), "move_pct": round(mv, 2),
+                            "actual_dir": actual, "correct": pdir == actual},
+            }
+            count += 1
+        d -= dt.timedelta(days=1)
+    store.save(out)

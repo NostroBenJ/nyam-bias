@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NYAM // Bias Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">&#9672;</span>
+    <span class="brand-name">NYAM<span class="dim">//</span>BIAS</span>
+    <span id="ticker" class="badge badge-ticker">&mdash;</span>
+    <span id="mockBadge" class="badge badge-mock hidden">MOCK</span>
+    <span id="expiriesBadge" class="badge badge-exp">&mdash; EXP</span>
+  </div>
+  <div class="topbar-right">
+    <span class="meta" id="generatedAt">&mdash;</span>
+    <span class="feed-status" id="feedStatus"><span class="pulse" id="pulse"></span><span id="feedLabel">LIVE</span></span>
+    <button id="startBtn" class="btn btn-start">&#9654; Start</button>
+    <button id="stopBtn" class="btn btn-stop">&#9632; Stop</button>
+    <button id="refreshBtn" class="btn">&#8635; Refresh</button>
+    <button id="logBtn" class="btn">&#10515; Obsidian</button>
+  </div>
+</header>
+
+<main class="board">
+  <!-- LEFT COLUMN -->
+  <div class="col">
+    <section class="card hero" id="heroCard">
+      <div class="hero-label">PRE-MARKET LEAN</div>
+      <div class="hero-bias" id="biasLabel">&mdash;</div>
+      <div class="hero-meta">
+        <span>score <b id="biasScore">&mdash;</b></span><span class="sep">&middot;</span>
+        <span>conviction <b id="biasConviction">&mdash;</b></span>
+      </div>
+      <p class="hero-summary" id="biasSummary">Loading&hellip;</p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Level Action Map</h2>
+      <ul id="levelMap" class="levelmap"></ul>
+      <div id="negZone" class="negzone hidden"></div>
+    </section>
+
+    <section class="card" id="trackerCard">
+      <h2 class="card-title">Bias Track Record <span class="dim">/ is there an edge?</span></h2>
+      <div class="track-top">
+        <div class="track-rate"><span id="trackRate">&mdash;</span><label>directional</label></div>
+        <div class="track-side">
+          <div id="trackRecord" class="track-record">&mdash;</div>
+          <div id="trackOverall" class="muted small">&mdash;</div>
+        </div>
+      </div>
+      <div id="trackDots" class="track-dots"></div>
+      <div id="trackByType" class="track-bytype small"></div>
+      <div id="trackNote" class="track-note small"></div>
+    </section>
+
+    <section class="card grow">
+      <h2 class="card-title">Why <span class="dim">/ every signal</span></h2>
+      <ul id="signals" class="signals scroll"></ul>
+    </section>
+  </div>
+
+  <!-- CENTER COLUMN -->
+  <div class="col">
+    <section class="card grow">
+      <h2 class="card-title">Gamma Exposure <span class="dim">/ dealer positioning</span></h2>
+      <div class="chips">
+        <div class="chip"><label>Net GEX</label><span id="gexNet">&mdash;</span></div>
+        <div class="chip"><label>Regime</label><span id="gexRegime" class="tag">&mdash;</span></div>
+        <div class="chip"><label>Control</label><span id="gexMagnet" class="lvl">&mdash;</span></div>
+        <div class="chip"><label>Flip</label><span id="gexFlip" class="lvl">&mdash;</span></div>
+        <div class="chip"><label>Call wall</label><span id="gexCallWall" class="lvl up">&mdash;</span></div>
+        <div class="chip"><label>Put wall</label><span id="gexPutWall" class="lvl down">&mdash;</span></div>
+        <div class="chip"><label>P/C</label><span id="gexPC">&mdash;</span></div>
+        <div class="chip"><label>NQ ratio</label><span id="gexRatio">&mdash;</span></div>
+        <div class="chip"><label>Exp move</label><span id="gexEM">&mdash;</span></div>
+        <div class="chip"><label>Range</label><span id="gexRange">&mdash;</span></div>
+      </div>
+      <div class="chart-wrap grow">
+        <svg id="gexChart" viewBox="0 0 660 420" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+    </section>
+
+    <div class="row2">
+      <section class="card">
+        <h2 class="card-title">SMT <span class="dim">/ NQ vs ES</span></h2>
+        <div id="smtSignal" class="smt-signal">&mdash;</div>
+        <p id="smtNote" class="muted small">&mdash;</p>
+      </section>
+      <section class="card">
+        <h2 class="card-title">Session Levels</h2>
+        <table class="levels" id="levelsTable"></table>
+      </section>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="col">
+    <section class="card">
+      <h2 class="card-title">Confluences</h2>
+      <div class="conf-sub">Across expirations</div>
+      <ul id="expiryConfluence" class="bullets small"></ul>
+      <div class="conf-sub">Session &times; GEX</div>
+      <ul id="confluences" class="bullets small"></ul>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">News / Econ</h2>
+      <ul id="news" class="bullets small"></ul>
+    </section>
+
+    <section class="card grow">
+      <h2 class="card-title">Morning Brief</h2>
+      <div id="brief" class="brief scroll">&mdash;</div>
+    </section>
+  </div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
